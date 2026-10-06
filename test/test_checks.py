@@ -24,6 +24,7 @@ from qiskit.quantum_info import Clifford, Pauli, PauliLindbladMap, StabilizerSta
 from qiskit.transpiler import CouplingMap
 from qiskit_paulice import CheckedCircuit
 from qiskit_paulice._internal import Metric as _Metric
+from qiskit_paulice._internal.check_picking.windowed_search import windowed_iterator
 from qiskit_paulice._internal.conversion import convert_noise_model as _convert_noise_model
 from qiskit_paulice._internal.station import CheckPickerStation
 from qiskit_paulice.checked_circuit import _fault_channels
@@ -830,6 +831,33 @@ class TestCheckPickerStation(unittest.TestCase):
         self.assertLessEqual(coupled.get_dimension(), whole.get_dimension())
         self.assertEqual(decoupled.get_current_energy(), coupled.get_current_energy())
         self.assertLess(decoupled.get_current_energy(), whole.get_current_energy())
+
+    def test_windowed_batch_matches_one_search_per_window(self):
+        """Scoring every window in one call commits the same check, at the same cost, as
+        searching each window on its own copy and keeping the cheapest result."""
+        payload = _clifford(nq=6, layers=4).remove_final_measurements(inplace=False)
+        noise = [_convert_noise_model(_DEFAULT_NOISE, _clifford(nq=6, layers=4))]
+        station = CheckPickerStation(payload, 2, _Metric.gamma(), noise)
+        np.random.seed(3)
+        support = station.get_wires(2)
+        windows = list(windowed_iterator(support, 3, len(support), 1, 8))
+        seeds = [int(s) for s in np.random.randint(0, 2**32 - 1, size=len(windows))]
+        self.assertGreater(len(windows), 1)
+
+        one_by_one = []
+        for window, seed in zip(windows, seeds, strict=True):
+            candidate = station.copy()
+            candidate.set_support(window, [1, 2, 3], seed=seed)
+            score = candidate.find_good_check()
+            if score is not None:
+                one_by_one.append((candidate, score))
+        expected, expected_score = min(one_by_one, key=lambda x: x[-1])
+
+        batched = station.copy()
+        score = batched.find_good_checks_windowed(windows, [1, 2, 3], seeds)
+        self.assertEqual(score, expected_score)
+        self.assertEqual(batched.get_check_data(), expected.get_check_data())
+        self.assertEqual(batched.get_circuit(), expected.get_circuit())
 
 
 class TestInternalHelpers(unittest.TestCase):

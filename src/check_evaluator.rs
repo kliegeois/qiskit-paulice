@@ -17,6 +17,7 @@ use super::noise_model::UNoiseModel;
 use super::pauli::Pauli;
 use super::sparse_pauli::SparsePauli;
 use super::stabilizer_group::StabilizerGroup;
+use rayon::prelude::*;
 use rustiq_core::structures::{CliffordCircuit, PauliLike, PauliSet};
 
 #[derive(Clone, Debug)]
@@ -74,6 +75,20 @@ impl CheckEvaluator {
             Metric::BalancedGamma => coverage.balanced_gamma_apx(),
         }
     }
+
+    /// Evaluates many candidate checks in one go, one cost per candidate in
+    /// input order.
+    ///
+    /// Nothing is shared between candidates: inserting a check shifts the gate
+    /// indices of everything downstream, so each one needs its own checked
+    /// circuit, noise generators and cumulant tables.
+    pub fn evaluate_batch(&self, items: &[(SparsePauli, Vec<usize>)]) -> Vec<f64> {
+        items
+            .par_iter()
+            .map(|(check, vzs)| self.evaluate(check, vzs))
+            .collect()
+    }
+
     /// Utility method to infer the virtual Zs for a given check.
     /// Also checks that the check ends up diagonal when pulled to the end.
     pub fn compute_vzs(&self, check: &SparsePauli) -> Vec<usize> {

@@ -1,0 +1,6 @@
+---
+features:
+  - |
+    The windowed search of :func:`qiskit_paulice.add_pauli_checks` now decodes all
+    windows for a target in parallel and scores their candidates as one batch. A seeded
+    search picks the same checks as before.
