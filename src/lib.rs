@@ -19,6 +19,8 @@ pub mod circuit_building;
 pub mod coverage;
 pub mod cumulant_table;
 pub mod generator_table;
+#[cfg(feature = "gpu")]
+pub mod gpu;
 pub mod metric;
 pub mod noise_generators;
 pub mod noise_model;

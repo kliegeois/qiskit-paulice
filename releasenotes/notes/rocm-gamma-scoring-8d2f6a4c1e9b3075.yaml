@@ -1,0 +1,9 @@
+---
+features:
+  - |
+    Source builds can include an optional ROCm backend that scores candidate checks
+    for ``cost="gamma"`` on an AMD GPU with 64-wide wavefronts. Build with
+    ``MATURIN_PEP517_ARGS="--features gpu" pip install .`` and set
+    ``PAULICE_USE_GPU=1`` at run time. The device returns the same costs as the CPU,
+    bit for bit, and searches it cannot score that way run on the CPU. See the
+    installation guide for details. The PyPI wheels do not include the backend.

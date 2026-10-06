@@ -62,3 +62,22 @@ If you installed the notebook dependencies, you can get started by running the n
 
     cd docs/
     jupyter lab
+
+Optional: score gamma on an AMD GPU
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A source build can include an optional ROCm backend that scores candidate checks for
+``cost="gamma"`` on an AMD GPU. It needs a ROCm install, which provides ``hipcc`` and
+rocPRIM, and a GPU with 64-wide wavefronts; it has been validated on an AMD Instinct
+MI355X. The backend is off by default and is not part of the PyPI wheels.
+
+.. code:: sh
+
+    MATURIN_PEP517_ARGS="--features gpu" pip install .
+
+``ROCM_PATH`` (default ``/opt/rocm``) locates the toolchain, and ``PAULICE_GPU_ARCH``
+(default ``gfx950``) takes a comma-separated list of GPU targets to compile for.
+At run time, set ``PAULICE_USE_GPU=1`` to use the device, and optionally
+``PAULICE_GPU_DEVICE`` to pick one. The device returns the same costs as the CPU, bit for
+bit. Searches it cannot score that way run on the CPU as before: those with layered or
+gate-wise noise models, with stabilizers, or on more than 256 qubits.

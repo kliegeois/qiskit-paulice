@@ -83,10 +83,56 @@ impl CheckEvaluator {
     /// indices of everything downstream, so each one needs its own checked
     /// circuit, noise generators and cumulant tables.
     pub fn evaluate_batch(&self, items: &[(SparsePauli, Vec<usize>)]) -> Vec<f64> {
+        #[cfg(feature = "gpu")]
+        if let Some(scores) = self.evaluate_gamma_on_device(items) {
+            return scores;
+        }
         items
             .par_iter()
             .map(|(check, vzs)| self.evaluate(check, vzs))
             .collect()
+    }
+
+    /// Scores the batch on the device, or returns `None` for the caller to
+    /// score on the host: the metric is not `Gamma`, `PAULICE_USE_GPU` is not
+    /// set, or the device declined the batch.
+    #[cfg(feature = "gpu")]
+    fn evaluate_gamma_on_device(&self, items: &[(SparsePauli, Vec<usize>)]) -> Option<Vec<f64>> {
+        use super::gpu::{GammaCandidate, GammaContext};
+
+        if !matches!(self.metric, Metric::Gamma) || !crate::gpu::gpu_enabled_by_env() {
+            return None;
+        }
+
+        let circuits: Vec<CliffordCircuit> = items
+            .par_iter()
+            .map(|(check, _)| add_check_no_allocate(self.base_circuit.clone(), check, self.ancilla))
+            .collect();
+        let mut all_check_qubits = self.current_checks.clone();
+        all_check_qubits.push(self.ancilla);
+        let virtual_zs: Vec<Vec<Vec<usize>>> = items
+            .iter()
+            .map(|(_, vzs)| {
+                let mut all = self.current_virtual_zs.clone();
+                all.push(vzs.clone());
+                all
+            })
+            .collect();
+        let ctx = GammaContext {
+            noise_models: &self.noise_models,
+            stabilizers: &self.stabilizers,
+            measured_qubits: &self.measured_qubits,
+        };
+        let candidates: Vec<GammaCandidate> = circuits
+            .iter()
+            .zip(virtual_zs.iter())
+            .map(|(circuit, vzs)| GammaCandidate {
+                circuit,
+                check_qubits: &all_check_qubits,
+                virtual_zs: vzs,
+            })
+            .collect();
+        crate::gpu::gamma_scores(&ctx, &candidates)
     }
 
     /// Utility method to infer the virtual Zs for a given check.
