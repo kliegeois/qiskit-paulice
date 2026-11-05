@@ -383,11 +383,25 @@ impl LerJob {
     /// post-selection accepts; they are counted here rather than scored.
     pub fn finish(&self, counts: ShotCounts, nonempty: usize) -> (f64, f64) {
         let accepted = counts.accepted + (self.nshots - nonempty) as u64;
-        (
-            accepted as f64 / self.nshots as f64,
-            counts.logical as f64 / accepted as f64,
-        )
+        psr_and_ler(accepted, counts.logical, self.nshots)
     }
+}
+
+/// The post-selection rate and the logical error rate among accepted shots.
+///
+/// When post-selection accepts no sampled shot the rate is undefined: the
+/// sample held no shot without a detected fault, usually because it was too
+/// small for the noise level. It ranks last at 1, so a candidate without an
+/// estimate is never preferred over one with an estimate; NaN would compare
+/// false against every other candidate.
+fn psr_and_ler(accepted: u64, accepted_logical: u64, nshots: usize) -> (f64, f64) {
+    if accepted == 0 {
+        return (0.0, 1.0);
+    }
+    (
+        accepted as f64 / nshots as f64,
+        accepted_logical as f64 / accepted as f64,
+    )
 }
 
 /// Scores a round of jobs, returning each job's counts and non-empty shot
@@ -470,6 +484,16 @@ mod tests {
     // `sample_shots` gets lambda from `PoissonTables::build`; the tests
     // derive it by hand.
     use crate::coverage::proba_from_rate;
+
+    #[test]
+    fn no_accepted_shot_is_the_worst_ler() {
+        assert_eq!(psr_and_ler(0, 0, 100), (0.0, 1.0));
+    }
+
+    #[test]
+    fn accepted_shots_give_the_ratios() {
+        assert_eq!(psr_and_ler(50, 5, 100), (0.5, 0.1));
+    }
 
     /// Mirrors the per-generator draw performed by `sample_shots`.
     fn draw(seed: u64, index: usize, lambda: f64, nshots: usize) -> Vec<u32> {
