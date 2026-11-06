@@ -10,10 +10,7 @@
 // copyright notice, and modified files need to carry a notice indicating
 // that they have been altered from the originals.
 
-use super::cumulant_table::CumulantTable;
-use super::generator_table::GeneratorTable;
-use super::noise_generators::build_noise_generators;
-use super::noise_model::{NoiseGenerator, UNoiseModel};
+use super::noise_model::{NoiseGenerator, NoiseModelLike, UNoiseModel};
 use super::pauli::Pauli;
 use super::pauli_propagator::{Direction, PauliPropagator};
 use super::sparse_pauli::SparsePauli;
@@ -33,6 +30,38 @@ fn proba_from_rate(rate: f64) -> f64 {
     1. - (1. + (-2. * rate).exp()) / 2.
 }
 
+fn is_covered_single_cumulant(cumulant: &SparsePauli, error: &SparsePauli) -> bool {
+    for (w, p) in error.paulis.iter() {
+        if *cumulant.paulis.get(w).unwrap_or(p) != *p {
+            return true;
+        }
+    }
+    false
+}
+
+fn get_syndrome(cumulants: &[SparsePauli], error: &SparsePauli) -> Vec<bool> {
+    cumulants
+        .iter()
+        .map(|c| is_covered_single_cumulant(c, error))
+        .collect()
+}
+
+fn is_covered(cumulants: &[SparsePauli], error: &SparsePauli) -> bool {
+    for cumulant in cumulants.iter() {
+        if error
+            .paulis
+            .iter()
+            .filter(|(w, p)| *cumulant.paulis.get(w).unwrap_or(*p) != **p)
+            .count()
+            % 2
+            == 1
+        {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn is_covered_single(cumulants: &[SparsePauli], pauli: u8, wire: &Wire) -> bool {
     cumulants
         .iter()
@@ -41,31 +70,30 @@ pub fn is_covered_single(cumulants: &[SparsePauli], pauli: u8, wire: &Wire) -> b
 
 pub struct Coverage<'a> {
     circuit: &'a CliffordCircuit,
-    noise_models: &'a [UNoiseModel],
-    logical_cumulants: CumulantTable,
-    post_selected_cumulants: CumulantTable,
+    noise_models: &'a Vec<UNoiseModel>,
+    logical_cumulants: Vec<SparsePauli>,
+    post_selected_cumulants: Vec<SparsePauli>,
 }
 
 impl<'a> Coverage<'a> {
-    pub fn new(circuit: &'a CliffordCircuit, noise_models: &'a [UNoiseModel]) -> Self {
+    pub fn new(circuit: &'a CliffordCircuit, noise_models: &'a Vec<UNoiseModel>) -> Self {
         Self {
             circuit,
             noise_models,
-            logical_cumulants: CumulantTable::default(),
-            post_selected_cumulants: CumulantTable::default(),
+            logical_cumulants: Vec::new(),
+            post_selected_cumulants: Vec::new(),
         }
     }
 
-    pub fn post_selected_cumulants(&self) -> &CumulantTable {
-        &self.post_selected_cumulants
-    }
-
-    pub fn logical_cumulants(&self) -> &CumulantTable {
-        &self.logical_cumulants
-    }
-
     fn get_generator_errors(&self) -> Vec<NoiseGenerator> {
-        build_noise_generators(self.circuit, self.noise_models)
+        let mut noise_generators = Vec::new();
+        let mut circuit = self.circuit.clone();
+        for noise_model in self.noise_models {
+            let (new_generators, new_circuit) = noise_model.get_generators(&circuit);
+            noise_generators.extend(new_generators);
+            circuit = new_circuit;
+        }
+        noise_generators
     }
     /// Computes & stores the backcumulants of a collection of checks specified
     /// by some measured qubits and some virtual CZs gates
@@ -84,11 +112,7 @@ impl<'a> Coverage<'a> {
             })
             .collect();
         self.post_selected_cumulants
-            .extend(propagator.get_cumulant_table_from_paulis(
-                &as_paulis,
-                Direction::Backward,
-                true,
-            ));
+            .extend(propagator.get_cumulants_from_paulis(&as_paulis, Direction::Backward, true));
     }
     /// Computes & stores the cumulants of a collection of logical operators
     /// Those can either be initial stabilizers (that will be forward-propagated)
@@ -96,11 +120,7 @@ impl<'a> Coverage<'a> {
     pub fn set_logical_cumulants(&mut self, stabilizers: &[Pauli], measured_qubits: &[usize]) {
         let propagator = PauliPropagator::new(self.circuit);
         self.logical_cumulants
-            .extend(propagator.get_cumulant_table_from_paulis(
-                stabilizers,
-                Direction::Forward,
-                true,
-            ));
+            .extend(propagator.get_cumulants_from_paulis(stabilizers, Direction::Forward, true));
         let as_paulis: Vec<_> = measured_qubits
             .iter()
             .map(|q| {
@@ -110,17 +130,13 @@ impl<'a> Coverage<'a> {
             })
             .collect();
         self.logical_cumulants
-            .extend(propagator.get_cumulant_table_from_paulis(
-                &as_paulis,
-                Direction::Backward,
-                true,
-            ));
+            .extend(propagator.get_cumulants_from_paulis(&as_paulis, Direction::Backward, true));
     }
     pub fn balanced_gamma_apx(&self) -> f64 {
         let error_generators = self.get_generator_errors();
         let mut gammas: HashMap<Vec<bool>, Vec<f64>> = HashMap::new();
         for (generator, rate) in error_generators.iter() {
-            let syndrome = self.post_selected_cumulants.syndrome(generator);
+            let syndrome = get_syndrome(&self.post_selected_cumulants, generator);
             gammas.entry(syndrome).or_default().push(*rate);
         }
         let nclasses = gammas.len() as f64;
@@ -169,7 +185,7 @@ impl<'a> Coverage<'a> {
                 for index in bin {
                     error.mult_inplace(&error_generators[*index].0);
                 }
-                let syndrome = measured_cumulants.syndrome(&error);
+                let syndrome = get_syndrome(&measured_cumulants, &error);
                 *gammas_threads[rayon::current_thread_index().unwrap_or_default()]
                     .lock()
                     .unwrap()
@@ -192,8 +208,23 @@ impl<'a> Coverage<'a> {
     }
 
     pub fn gamma_apx(&self) -> f64 {
-        GeneratorTable::build(self.circuit, self.noise_models)
-            .gamma_score(&self.post_selected_cumulants, &self.logical_cumulants)
+        let error_generators = self.get_generator_errors();
+
+        let accs: Vec<_> = (0..rayon::current_num_threads())
+            .map(|_| Mutex::new(0.))
+            .collect();
+        error_generators.par_iter().for_each(|(generator, rate)| {
+            if is_covered(&self.post_selected_cumulants, generator) {
+                return;
+            }
+            if !is_covered(&self.logical_cumulants, generator) {
+                return;
+            }
+            *accs[rayon::current_thread_index().unwrap_or_default()]
+                .lock()
+                .unwrap() += rate;
+        });
+        (2. * accs.into_iter().map(|m| *m.lock().unwrap()).sum::<f64>()).exp()
     }
 
     pub fn approximate_psr_ler(&self, nshots: usize) -> (f64, f64) {
@@ -253,11 +284,11 @@ impl<'a> Coverage<'a> {
                 if error.paulis.is_empty() {
                     continue;
                 }
-                if measured_cumulants.covered_parity_any(&error) {
+                if is_covered(&measured_cumulants, &error) {
                     continue;
                 }
                 loc_a_e += 1;
-                if !cumulants.covered_parity_any(&error) {
+                if !is_covered(&cumulants, &error) {
                     continue;
                 }
                 loc_a_l_e += 1;
