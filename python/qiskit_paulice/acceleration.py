@@ -17,7 +17,7 @@ engine is a separately installed package, selected through `Coheriq
 <https://github.com/Qiskit/coheriq>`_ before the first call to
 :func:`~qiskit_paulice.checks.add_pauli_checks`, either with
 ``coheriq.enable_engine(qiskit_paulice, "<engine>")`` or by setting
-``PAULICE_ENGINE=<engine>``.
+``QISKIT_PAULICE_ENGINE=<engine>``.
 
 The engine overrides one Coheriq candidate, :func:`scoring_engine`, to return
 its native scoring table. qiskit-paulice calls that table from native code, so
@@ -48,7 +48,7 @@ def _host_scoring_engine():
     return None
 
 
-_domain = AccelerationDomain("qiskit_paulice", env_prefix="PAULICE")
+_domain = AccelerationDomain("qiskit_paulice", env_prefix="QISKIT_PAULICE")
 scoring_engine = _domain.acceleration_candidate(name="scoring_engine")(_host_scoring_engine)
 _domain.materialize()
 

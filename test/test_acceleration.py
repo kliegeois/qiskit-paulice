@@ -50,7 +50,7 @@ class TestScoringEngineSeam(unittest.TestCase):
         with self.assertRaises((TypeError, ValueError)):
             register_scoring_engine(object())
 
-    @unittest.skipIf(os.environ.get("PAULICE_ENGINE"), "an engine is selected")
+    @unittest.skipIf(os.environ.get("QISKIT_PAULICE_ENGINE"), "an engine is selected")
     def test_conformance_skips_without_an_engine(self):
         """Every check reports skipped when no engine is registered."""
         self.assertIsNone(acceleration.scoring_engine_name())
@@ -60,9 +60,9 @@ class TestScoringEngineSeam(unittest.TestCase):
             with self.subTest(check=name):
                 self.assertEqual(outcome, "skipped")
 
-    @unittest.skipUnless(os.environ.get("PAULICE_ENGINE"), "no engine is selected")
+    @unittest.skipUnless(os.environ.get("QISKIT_PAULICE_ENGINE"), "no engine is selected")
     def test_selected_engine_passes_conformance(self):
-        """The engine chosen through ``PAULICE_ENGINE`` matches the host."""
+        """The engine chosen through ``QISKIT_PAULICE_ENGINE`` matches the host."""
         results = acceleration.run_engine_conformance()
         self.assertIsNotNone(acceleration.scoring_engine_name())
         for name, outcome, detail in results:

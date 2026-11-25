@@ -1198,7 +1198,7 @@ mod device {
                 if super::device_count() <= 0 {
                     return None;
                 }
-                let device = std::env::var("PAULICE_ENGINE_DEVICE")
+                let device = std::env::var("QISKIT_PAULICE_ENGINE_DEVICE")
                     .ok()
                     .and_then(|v| v.parse::<i32>().ok())
                     .unwrap_or(0);

@@ -12,8 +12,8 @@ Enabling an engine
 An engine is a separate package, installed alongside qiskit-paulice. Engines are discovered
 and enabled through `Coheriq <https://github.com/Qiskit/coheriq>`_, which qiskit-paulice
 installs as a dependency. Select the engine by name before the first call to
-:func:`~qiskit_paulice.checks.add_pauli_checks`, either by setting ``PAULICE_ENGINE=<name>`` before
-starting Python, or in code:
+:func:`~qiskit_paulice.checks.add_pauli_checks`, either by setting
+``QISKIT_PAULICE_ENGINE=<name>`` before starting Python, or in code:
 
 .. code:: python
 
@@ -24,8 +24,8 @@ starting Python, or in code:
 
 The choice is final for the rest of the process: a second registration is refused.
 
-``PAULICE_ENGINE_DEVICE`` sets the index of the device the engine opens. It defaults to ``0``,
-and a value that is not an integer also means ``0``.
+``QISKIT_PAULICE_ENGINE_DEVICE`` sets the index of the device the engine opens. It defaults to
+``0``, and a value that is not an integer also means ``0``.
 
 :func:`qiskit_paulice.acceleration.scoring_engine_name` reports which engine is registered,
 and :func:`qiskit_paulice.acceleration.run_engine_conformance` checks the registered engine
